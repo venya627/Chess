@@ -3,7 +3,7 @@ package logic.board.bitboard;
 public class Engine {
 
     public static long perft(Bitboard bitboard, int depth) {
-        int[] moves = bitboard.generateAllMoves();
+        int[] moves = bitboard.generateAllMoves1();
 
         if (depth == 0) {
             return 1;
@@ -27,7 +27,7 @@ public class Engine {
         depth--;
 
         long totalTime = System.nanoTime();
-        int[] moves = bitboard.generateAllMoves();
+        int[] moves = bitboard.generateAllMoves1();
         totalTime = System.nanoTime() - totalTime;
 
         bitboard.copy();

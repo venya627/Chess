@@ -9,13 +9,11 @@ import static logic.board.bitboard.Bitboard.*;
 
 public class Test {
 
-    public static Bitboard b = new Bitboard("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
+    public static Bitboard b = new Bitboard();
 
     public static void main(String[] args) throws FileNotFoundException {
-
+        Engine.perftFancy(b, 6);
     }
-
-
 
     public static void move(int move) {
         b.makeMove(move);
@@ -23,7 +21,7 @@ public class Test {
     }
 
     public static void printMoves() {
-        System.out.println(movesToString(b.generateAllMoves()));
+        System.out.println(movesToString(b.generateAllMoves1()));
     }
 
     public static void start() {

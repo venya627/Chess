@@ -762,7 +762,7 @@ public class Bitboard {
         return Arrays.copyOfRange(moves, 0, moveIndex);
     }
 
-    public int[] generateAllMoves1(int move) {
+    public int[] generateAllMoves1() {
         int[] moves = new int[218];
         int moveIndex = 0;
 
@@ -775,6 +775,10 @@ public class Bitboard {
         long enemies = occupancies[opponentColor];
         long occupied = occupancies[BOTH];
         long empty = ~occupied;
+
+        long enemyQueens = bitboards[opponentBitboardIndex + QUEEN];
+        long enemyBishopsQueens = bitboards[opponentBitboardIndex + BISHOP] | enemyQueens;
+        long enemyRooksQueens = bitboards[opponentBitboardIndex + ROOK] | enemyQueens;
 
         int kingSquare = lowestOneBitIndex(bitboards[bitboardIndex + KING]);
 
@@ -827,11 +831,6 @@ public class Bitboard {
         }
 
         long checkers = getAttackers(kingSquare, opponentColor);
-
-        long enemyQueens = bitboards[opponentBitboardIndex + QUEEN];
-        long enemyBishopsQueens = bitboards[opponentBitboardIndex + BISHOP] | enemyQueens;
-        long enemyRooksQueens = bitboards[opponentBitboardIndex + ROOK] | enemyQueens;
-
         long potentialPinners = enemies ^ checkers;
 
         long pinnersHV = potentialPinners & enemyRooksQueens & xrayRookAttacks(kingSquare, occupied);
@@ -855,50 +854,17 @@ public class Bitboard {
         long notPinned = ~(pinsHV | pinsD12);
 
         long pawns = bitboards[bitboardIndex++];
-        long knights = bitboards[bitboardIndex++] & notPinned;
-        long bishops = bitboards[bitboardIndex++];
-        long rooks = bitboards[bitboardIndex++];
-        long queens = bitboards[bitboardIndex];
-
-        long freePawns = pawns & notPinned;
-
-        long pawnsCanPush = freePawns | pinsHV & lineThrough(kingSquare, NORTH) & pawns;
-        long pawnsCanTakeLeft = freePawns | pinsD12 & lineThrough(kingSquare, NORTH_WEST) & pawns;
-        long pawnsCanTakeRight = freePawns | pinsD12 & lineThrough(kingSquare, NORTH_EAST) & pawns;
-
-        long bishopsQueens = bishops | queens;
-        long rooksQueens = rooks | queens;
-
-        long freeBishopsQueens = bishopsQueens & notPinned;
-        long freeRooksQueens = rooksQueens & notPinned;
-        long pinnedD12BishopsQueens = bishopsQueens & pinsD12;
-        long pinnedHVRooksQueens = rooksQueens & pinsHV;
 
         int forward = turn == WHITE ? NORTH : SOUTH;
         int upLeft = turn == WHITE ? NORTH_WEST : SOUTH_EAST;
         int upRight = turn == WHITE ? NORTH_EAST : SOUTH_WEST;
-
-        long lastRank = turn == WHITE ? HORIZONTAL[0] : HORIZONTAL[7];
-        long enPassant = enPassantTargetSquare != -1 ? SQ1 >>> enPassantTargetSquare : 0L;
-
-        long singlePushes = shift(pawnsCanPush, forward) & empty;
-        long doublePushes = shift(singlePushes & (turn == WHITE ? HORIZONTAL[5] : HORIZONTAL[2]), forward) & empty;
-        long leftAttacks = shift(pawnsCanTakeLeft, upLeft) & (enemies | enPassant);
-        long rightAttacks = shift(pawnsCanTakeRight, upRight) & (enemies | enPassant);
-
-        long pushPromotions = singlePushes & lastRank;
-        long attackLeftPromotions = leftAttacks & lastRank;
-        long attackRightPromotions = rightAttacks & lastRank;
-
-        singlePushes &= ~lastRank;
-        leftAttacks &= ~(lastRank | enPassant);
-        rightAttacks &= ~(lastRank | enPassant);
 
         long checkMask = ALL_BITS_SET;
 
         switch (sparseBitCount(checkers)) {
             case 0 -> {
                 if (enPassantTargetSquare != -1) {
+                    long enPassant = SQ1 >>> enPassantTargetSquare;
                     long pawnsCanEnPassant = pawns & ~pinsHV & PAWN_ATTACKS[opponentColor][enPassantTargetSquare];
 
                     while (pawnsCanEnPassant != 0) {
@@ -974,12 +940,244 @@ public class Bitboard {
 
                     default:
                         checkMask = BITS_BETWEEN[kingSquare][checkerSquare];
-                        break;
                 }
             }
 
             case 2 -> {
                 return Arrays.copyOfRange(moves, 0, moveIndex);
+            }
+        }
+
+        long lastRank = turn == WHITE ? HORIZONTAL[0] : HORIZONTAL[7];
+
+        long freePawns = pawns & notPinned;
+
+        long pawnsCanPush = freePawns | pinsHV & lineThrough(kingSquare, NORTH) & pawns;
+        long pawnsCanTakeLeft = freePawns | pinsD12 & lineThrough(kingSquare, NORTH_WEST) & pawns;
+        long pawnsCanTakeRight = freePawns | pinsD12 & lineThrough(kingSquare, NORTH_EAST) & pawns;
+
+        long knights = bitboards[bitboardIndex++] & notPinned;
+        long bishops = bitboards[bitboardIndex++];
+        long rooks = bitboards[bitboardIndex++];
+        long queens = bitboards[bitboardIndex];
+
+        long bishopsQueens = bishops | queens;
+        long rooksQueens = rooks | queens;
+
+        long freeBishopsQueens = bishopsQueens & notPinned;
+        long freeRooksQueens = rooksQueens & notPinned;
+        long pinnedD12BishopsQueens = bishopsQueens & pinsD12;
+        long pinnedHVRooksQueens = rooksQueens & pinsHV;
+
+        long singlePushes = shift(pawnsCanPush, forward) & empty;
+        long doublePushes = shift(singlePushes & (turn == WHITE ? HORIZONTAL[5] : HORIZONTAL[2]), forward) & empty & checkMask;
+        long leftAttacks = shift(pawnsCanTakeLeft, upLeft) & enemies & checkMask;
+        long rightAttacks = shift(pawnsCanTakeRight, upRight) & enemies & checkMask;
+
+        singlePushes &= checkMask;
+
+        long pushPromotions = singlePushes & lastRank;
+        long attackLeftPromotions = leftAttacks & lastRank;
+        long attackRightPromotions = rightAttacks & lastRank;
+
+        singlePushes &= ~lastRank;
+        leftAttacks &= ~lastRank;
+        rightAttacks &= ~lastRank;
+
+        // Pawns
+        {
+            while (pushPromotions != 0) {
+                int targetSquare = lowestOneBitIndex(pushPromotions);
+                int sourceSquare = targetSquare - forward;
+
+                pushPromotions = popBit(pushPromotions, targetSquare);
+
+                moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, KNIGHT_PROMOTION);
+                moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, BISHOP_PROMOTION);
+                moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, ROOK_PROMOTION);
+                moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, QUEEN_PROMOTION);
+            }
+
+            while (attackLeftPromotions != 0) {
+                int targetSquare = lowestOneBitIndex(attackLeftPromotions);
+                int sourceSquare = targetSquare - upLeft;
+
+                attackLeftPromotions = popBit(attackLeftPromotions, targetSquare);
+
+                moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, KNIGHT_PROMO_CAPTURE);
+                moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, BISHOP_PROMO_CAPTURE);
+                moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, ROOK_PROMO_CAPTURE);
+                moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, QUEEN_PROMO_CAPTURE);
+            }
+
+            while (attackRightPromotions != 0) {
+                int targetSquare = lowestOneBitIndex(attackRightPromotions);
+                int sourceSquare = targetSquare - upRight;
+
+                attackRightPromotions = popBit(attackRightPromotions, targetSquare);
+
+                moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, KNIGHT_PROMO_CAPTURE);
+                moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, BISHOP_PROMO_CAPTURE);
+                moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, ROOK_PROMO_CAPTURE);
+                moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, QUEEN_PROMO_CAPTURE);
+            }
+
+            while (singlePushes != 0) {
+                int targetSquare = lowestOneBitIndex(singlePushes);
+                int sourceSquare = targetSquare - forward;
+
+                singlePushes = popBit(singlePushes, targetSquare);
+
+                moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, QUIET_MOVE);
+            }
+
+            while (doublePushes != 0) {
+                int targetSquare = lowestOneBitIndex(doublePushes);
+                int sourceSquare = targetSquare - forward - forward;
+
+                doublePushes = popBit(doublePushes, targetSquare);
+
+                moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, DOUBLE_PAWN_PUSH);
+            }
+
+            while (leftAttacks != 0) {
+                int targetSquare = lowestOneBitIndex(leftAttacks);
+                int sourceSquare = targetSquare - upLeft;
+
+                leftAttacks = popBit(leftAttacks, targetSquare);
+
+                moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, CAPTURE);
+            }
+
+            while (rightAttacks != 0) {
+                int targetSquare = lowestOneBitIndex(rightAttacks);
+                int sourceSquare = targetSquare - upRight;
+
+                rightAttacks = popBit(rightAttacks, targetSquare);
+
+                moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, CAPTURE);
+            }
+        }
+
+        // Knights
+        while (knights != 0) {
+            int sourceSquare = lowestOneBitIndex(knights);
+
+            long attacks = KNIGHT_ATTACKS[sourceSquare] & emptyOrEnemies & checkMask;
+
+            long quietMoves = attacks & empty;
+            long captures = attacks & enemies;
+
+            while (quietMoves != 0) {
+                int targetSquare = lowestOneBitIndex(quietMoves);
+
+                quietMoves = popBit(quietMoves, targetSquare);
+
+                moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, QUIET_MOVE);
+            }
+
+            while (captures != 0) {
+                int targetSquare = lowestOneBitIndex(captures);
+
+                captures = popBit(captures, targetSquare);
+
+                moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, CAPTURE);
+            }
+
+            knights = popBit(knights, sourceSquare);
+        }
+
+        // Bishops & queens
+        {
+            while (freeBishopsQueens != 0) {
+                int sourceSquare = lowestOneBitIndex(freeBishopsQueens);
+                long attacks = bishopAttacks(sourceSquare, occupied) & emptyOrEnemies & checkMask;
+
+                long quietMoves = attacks & empty;
+                long captures = attacks & enemies;
+
+                while (quietMoves != 0) {
+                    int targetSquare = lowestOneBitIndex(quietMoves);
+                    moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, QUIET_MOVE);
+                    quietMoves = popBit(quietMoves, targetSquare);
+                }
+
+                while (captures != 0) {
+                    int targetSquare = lowestOneBitIndex(captures);
+                    moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, CAPTURE);
+                    captures = popBit(captures, targetSquare);
+                }
+
+                freeBishopsQueens = popBit(freeBishopsQueens, sourceSquare);
+            }
+
+            while (freeRooksQueens != 0) {
+                int sourceSquare = lowestOneBitIndex(freeRooksQueens);
+                long attacks = rookAttacks(sourceSquare, occupied) & emptyOrEnemies & checkMask;
+
+                long quietMoves = attacks & empty;
+                long captures = attacks & enemies;
+
+                while (quietMoves != 0) {
+                    int targetSquare = lowestOneBitIndex(quietMoves);
+                    moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, QUIET_MOVE);
+                    quietMoves = popBit(quietMoves, targetSquare);
+                }
+
+                while (captures != 0) {
+                    int targetSquare = lowestOneBitIndex(captures);
+                    moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, CAPTURE);
+                    captures = popBit(captures, targetSquare);
+                }
+
+                freeRooksQueens = popBit(freeRooksQueens, sourceSquare);
+            }
+        }
+
+        // Rooks & queens
+        {
+            while (pinnedD12BishopsQueens != 0) {
+                int sourceSquare = lowestOneBitIndex(pinnedD12BishopsQueens);
+                long attacks = bishopAttacks(sourceSquare, occupied) & emptyOrEnemies & checkMask & pinsD12;
+
+                long quietMoves = attacks & empty;
+                long captures = attacks & enemies;
+
+                while (quietMoves != 0) {
+                    int targetSquare = lowestOneBitIndex(quietMoves);
+                    moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, QUIET_MOVE);
+                    quietMoves = popBit(quietMoves, targetSquare);
+                }
+
+                while (captures != 0) {
+                    int targetSquare = lowestOneBitIndex(captures);
+                    moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, CAPTURE);
+                    captures = popBit(captures, targetSquare);
+                }
+
+                pinnedD12BishopsQueens = popBit(pinnedD12BishopsQueens, sourceSquare);
+            }
+
+            while (pinnedHVRooksQueens != 0) {
+                int sourceSquare = lowestOneBitIndex(pinnedHVRooksQueens);
+                long attacks = rookAttacks(sourceSquare, occupied) & emptyOrEnemies & checkMask & pinsHV;
+
+                long quietMoves = attacks & empty;
+                long captures = attacks & enemies;
+
+                while (quietMoves != 0) {
+                    int targetSquare = lowestOneBitIndex(quietMoves);
+                    moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, QUIET_MOVE);
+                    quietMoves = popBit(quietMoves, targetSquare);
+                }
+
+                while (captures != 0) {
+                    int targetSquare = lowestOneBitIndex(captures);
+                    moves[moveIndex++] = encodeMove(sourceSquare, targetSquare, CAPTURE);
+                    captures = popBit(captures, targetSquare);
+                }
+
+                pinnedHVRooksQueens = popBit(pinnedHVRooksQueens, sourceSquare);
             }
         }
 
